@@ -1,0 +1,52 @@
+---
+title: "Rapport de laboratoire 5"
+subtitle: "MTH8211"
+author:
+  - name: Mon nom
+    email: mon.adresse@polymtl.ca
+    affiliation:
+      - name: Polytechnique Montréal
+format:
+  pdf:
+    keep-tex: false
+    documentclass: article
+    include-in-header:
+      - text: |
+            \usepackage{xspace}
+            \usepackage[francais]{babel}
+    geometry:
+      - margin=1in
+    papersize: letter
+    colorlinks: true
+    urlcolor: blue
+engine: julia
+---
+
+```{julia}
+#| output: false
+using Pkg
+Pkg.activate("labo5_env")
+Pkg.add("Krylov")
+Pkg.add("SuiteSparseMatrixCollection")
+Pkg.add("MatrixMarket")
+
+using LinearAlgebra
+using MatrixMarket
+using Krylov, SuiteSparseMatrixCollection
+```
+
+# Contexte
+
+Dans ce laboratoire, on demande de valider le théorème de Murphy, Golub et Wathen sur le préconditionneur idéal pour les matrices de point de selle.
+On se réfèrera aux carnets Jupyter vus en laboratoire pour les extraits de code pertinents.
+
+# Questions
+
+Choisir une matrice $A$ rectangulaire dans la `SuiteSparseMatrixCollection` et former la matrice de point de selle $K$ ainsi qu'un membre de droite.
+Implémenter le préconditionneur idéal basé sur le complément de Schur.
+Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
+
+```{julia}
+# votre code ici
+```
+
