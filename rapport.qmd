@@ -2,8 +2,8 @@
 title: "Rapport de laboratoire 5"
 subtitle: "MTH8211"
 author:
-  - name: Mon nom
-    email: mon.adresse@polymtl.ca
+  - name: Hortense Beaudoin
+    email: hortense.beaudoin@polymtl.ca
     affiliation:
       - name: Polytechnique Montréal
 format:
@@ -47,6 +47,46 @@ Implémenter le préconditionneur idéal basé sur le complément de Schur.
 Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
 
 ```{julia}
-# votre code ici
+using SparseArrays
+
+ssmc = ssmc_db()
+pb = ssmc_matrices(ssmc, "", "ash219")
+path = fetch_ssmc(pb, format="MM")
+path_mtx = path[1]
+A = MatrixMarket.mmread(joinpath(path_mtx, "ash219.mtx"))
+
+m, n = size(A)
+b = ones(m)
+K = [I A ;
+     A' spzeros(n, n)]
+rhs = [b ; zeros(n)];
 ```
 
+```{julia}
+struct Precond
+    m::Int
+    n::Int
+    LLt::SparseArrays.CHOLMOD.Factor{Float64, Int64}
+end
+```
+
+```{julia}
+import LinearAlgebra.ldiv!
+
+function ldiv!(y, Pinv::Precond, b)
+    m = Pinv.m
+    n = Pinv.n
+    y[1:m] = b[1:m]
+    y[m+1:end] = Pinv.LLt \ b[m+1:end]
+
+    return y
+end
+```
+
+```{julia}
+P = Precond(size(A,1), size(A,2), cholesky(A'*A))
+
+ (x, stats) = minres(K, rhs; history=true, M=P, ldiv=true)
+```
+
+On constate que le système est en effet résolu (*solve*) en 2 itérations. 
