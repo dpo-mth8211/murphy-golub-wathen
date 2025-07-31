@@ -2,8 +2,8 @@
 title: "Rapport de laboratoire 5"
 subtitle: "MTH8211"
 author:
-  - name: Mon nom
-    email: mon.adresse@polymtl.ca
+  - name: Téo Dumoutier
+    email: teo.dumoutier@polymtl.ca
     affiliation:
       - name: Polytechnique Montréal
 format:
@@ -14,6 +14,8 @@ format:
       - text: |
             \usepackage{xspace}
             \usepackage[francais]{babel}
+            \usepackage{fvextra}
+            \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
     geometry:
       - margin=1in
     papersize: letter
@@ -30,7 +32,7 @@ Pkg.add("Krylov")
 Pkg.add("SuiteSparseMatrixCollection")
 Pkg.add("MatrixMarket")
 
-using LinearAlgebra
+using LinearAlgebra, SparseArrays
 using MatrixMarket
 using Krylov, SuiteSparseMatrixCollection
 ```
@@ -46,7 +48,86 @@ Choisir une matrice $A$ rectangulaire dans la `SuiteSparseMatrixCollection` et f
 Implémenter le préconditionneur idéal basé sur le complément de Schur.
 Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
 
+Pour une matrice de point de selle :
+$$
+K
+=
+\begin{bmatrix}
+M   & A \\
+A' & 0
+\end{bmatrix},
+$$
+
+Le préconditionneur idéal est de la forme :
+$$
+P
+=
+\begin{bmatrix}
+M & 0 \\
+0 & A' M^{-1} A
+\end{bmatrix}.
+$$
+
+Ici $M = I$, et donc on a :
+$$
+P
+=
+\begin{bmatrix}
+I & 0 \\
+0 & A'A
+\end{bmatrix}.
+$$
+
+Pour un système $K u = v$ sachant que A est de taille $m \times n$, on constate que son application ne fait qu'égaler $u[1:m] = v[1:m]$, et qu'ensuite il est nécessaire de résoudre $A'A u[m+1:end] = v[m+1:end]$. Qui plus est, le préconditionneur ne dépend que de A ici. Ainsi, plutôt que de le former, il est possible d'effectuer la factorisation de Cholesky de $A'A$ une seule fois lors de la construction d'une structure "préconditionneur", qui stocke l'objet résultant de cette factorisation. Cet objet peut ensuite être utilisé pour résoudre avec `\` le système $A'A u[m+1:end] = v[m+1:end]$. Ceci possède donc tout ce dont l'on a besoin pour appliquer l'action du préconditionneur sur une matrice donnée.
+
 ```{julia}
-# votre code ici
+#| output: false
+struct Precondi{T, F}
+  """
+  Structure pour le préconditionneur d'intérêt
+  """
+  m::Int
+  n::Int
+  LLt::F
+end
+
+function construct_precondi(A)
+  """
+  Constructeur du préconditionneur d'intérêt
+  """
+  T = eltype(A)
+  m, n = size(A)
+  LLt = cholesky(Symmetric(A'A, :L))
+  object = Precondi{T, typeof(LLt)}(m, n, LLt)
+  return object
+end
 ```
 
+```{julia}
+#| output: false
+import LinearAlgebra: ldiv!
+
+function ldiv!(x::Vector{T}, M::Precondi, b::Vector{T}) where T
+  m, n, LLt = M.m, M.n, M.LLt
+  x[1:m] .= b[1:m]
+  x[m+1:end] .= LLt \ b[m+1:end]
+  return b
+end
+```
+
+L'exemple suivant valide que le solveur MINRES s'arrête effectivement en environ 3 itérations :
+
+```{julia}
+ssmc = ssmc_db()
+pb = ssmc_matrices(ssmc, "", "illc1033")
+path = fetch_ssmc(pb, format="MM")
+path_mtx = path[1]
+A = MatrixMarket.mmread(joinpath(path_mtx, "illc1033.mtx"))
+m, n = size(A)
+b = ones(m)
+K = [I A ; A' spzeros(n, n)]
+rhs = [b ; zeros(n)];
+
+(sol, stats) = minres(K, rhs, M=construct_precondi(A), ldiv=true)
+display(stats)
+```
