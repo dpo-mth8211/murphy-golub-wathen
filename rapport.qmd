@@ -2,8 +2,8 @@
 title: "Rapport de laboratoire 5"
 subtitle: "MTH8211"
 author:
-  - name: Mon nom
-    email: mon.adresse@polymtl.ca
+  - name: Amami Yasmine
+    email: amami.yasmine@polymtl.ca
     affiliation:
       - name: Polytechnique Montréal
 format:
@@ -29,10 +29,15 @@ Pkg.activate("labo5_env")
 Pkg.add("Krylov")
 Pkg.add("SuiteSparseMatrixCollection")
 Pkg.add("MatrixMarket")
+Pkg.add("LinearOperators")
+Pkg.add("SparseArrays")
 
 using LinearAlgebra
 using MatrixMarket
 using Krylov, SuiteSparseMatrixCollection
+using LinearOperators
+using SparseArrays
+
 ```
 
 # Contexte
@@ -47,6 +52,48 @@ Implémenter le préconditionneur idéal basé sur le complément de Schur.
 Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
 
 ```{julia}
-# votre code ici
+ssmc = ssmc_db()
+matrice = ssmc_matrices(ssmc, "", "illc1033")
+path = fetch_ssmc(matrice, format="MM")
+path_mtx = path[1]
+A = MatrixMarket.mmread(joinpath(path_mtx, "illc1033.mtx"))
+
+m, n = size(A)
+M = I
+b = ones(m)
+K = [I A ;
+     A' spzeros(n, n)]
+rhs = [b ; zeros(n)]
+
+x_sans, stats_sans = minres(K, rhs, atol=1e-12, rtol=1e-12)
+println("Nombre d'itérations sans préconditionneur: $(stats_sans.niter)")
+
+function preconditioner_mgw(A_matrix, M_matrix=I)
+    m, n = size(A_matrix)
+    
+    # on calcule le complément de Schur
+    schur_complement = A_matrix' * A_matrix
+    
+    # on utilise la factorisation de Cholesky pour l'inversion
+    schur_factor = cholesky(Hermitian(schur_complement))
+    
+    # on crée l'opérateur linéaire pour P⁻¹
+    function preconditioner_action(v)
+        v1 = v[1:m]      
+        v2 = v[m+1:end]  
+        w1 = v1  # M⁻¹v1 = v1 car M = I
+        w2 = schur_factor \ v2  # (A'A)⁻¹v2
+        
+        return [w1; w2]
+    end
+    return LinearOperator(Float64, m+n, m+n, true, true, 
+                         (res, v) -> copyto!(res, preconditioner_action(v)))
+end
+
+P_inv = preconditioner_mgw(A)
+
+x_avec, stats_avec = minres(K, rhs, M=P_inv, atol=1e-12, rtol=1e-12)
+println("Nombre d'itérations avec préconditionneur: $(stats_avec.niter)")
+
 ```
 
