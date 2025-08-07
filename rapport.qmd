@@ -2,8 +2,8 @@
 title: "Rapport de laboratoire 5"
 subtitle: "MTH8211"
 author:
-  - name: Mon nom
-    email: mon.adresse@polymtl.ca
+  - name: Mouhtal Oussama
+    email: oussama-2.mouhtal@polymtl.ca
     affiliation:
       - name: Polytechnique Montréal
 format:
@@ -23,6 +23,7 @@ engine: julia
 ---
 
 ```{julia}
+#| echo: false
 #| output: false
 using Pkg
 Pkg.activate("labo5_env")
@@ -31,7 +32,7 @@ Pkg.add("SuiteSparseMatrixCollection")
 Pkg.add("MatrixMarket")
 
 using LinearAlgebra
-using MatrixMarket
+using MatrixMarket, SparseArrays
 using Krylov, SuiteSparseMatrixCollection
 ```
 
@@ -47,6 +48,81 @@ Implémenter le préconditionneur idéal basé sur le complément de Schur.
 Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
 
 ```{julia}
-# votre code ici
+"""
+    struct Prec{T,S}
+
+Structure représentant le préconditionneur idéal de `MURPHY-GOLUB-WATHEN`
+
+# Champs
+- `A::Matrix{T}` : matrice rectangulaire.
+- `M::S`         : matrice carrée inversible, tel que on connait son inverse.
+"""
+struct Prec{T,S} 
+    A :: Matrix{T}
+    M :: S
+end
+
+"""
+    LinearAlgebra.ldiv!(y::Vector{T}, P::Prec{T,S}, x::Vector{T})
+
+appliquer l'inverse de P à un vecteur `x`.
+
+# Arguments
+- `x` : vecteur d'entrée de taille `m + n`, partitionné en deux blocs.
+- `y` : vecteur de sortie (modifié in-place).
+- `P` : objet modélisant le préconditionneur de `MURPHY-GOLUB-WATHEN`
+"""
+function LinearAlgebra.ldiv!(y, P::Prec{T,S}, x) where {T,S}
+    m, n = size(P.A)               
+    # Décomposition de AtA
+    AtA = P.A' * P.A
+    LLt = cholesky(AtA)
+
+    # Résolution partie y2
+    y2 = LLt \ x[m+1:end]
+
+    # Écriture dans y
+    y[1:m] .= P.M \ x[1:m]
+    y[m+1:end] .= y2
+
+    return y
+end
 ```
+
+# Exemples 
+
+```{julia}
+ssmc = ssmc_db()
+
+function get_mm(name)
+  pb = ssmc_matrices(ssmc, "", name)
+  path = fetch_ssmc(pb, format="MM")
+  path_mtx = path[1]
+  A = MatrixMarket.mmread(joinpath(path_mtx, name * ".mtx"))
+  b = MatrixMarket.mmread(joinpath(path_mtx, name * "_b.mtx"))
+  return A, b
+end 
+
+
+names = ["illc1033", "illc1850", "well1033", "well1850"]
+for name in names
+  A, bmat = get_mm(name)
+  b = bmat[:, 1]
+  m, n = size(A)
+  K = [I A ;
+     A' spzeros(n, n)]
+  rhs = [b ; zeros(n)]
+  T = eltype(A)
+  S = typeof(I)
+  P = Prec{T, S}(A, I)
+  (x, stats) = minres(K, rhs; M = P,ldiv = true)  
+  println("##################################################")
+  println("######### Nom de la matrice : $(name) ##########")
+  println("##################################################")
+  println("Dimensions  de A      : ", (m, n))    
+  println("Itérations MINRES : ", stats.niter)      
+end 
+
+```
+
 
