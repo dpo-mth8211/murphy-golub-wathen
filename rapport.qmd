@@ -2,8 +2,8 @@
 title: "Rapport de laboratoire 5"
 subtitle: "MTH8211"
 author:
-  - name: Mon nom
-    email: mon.adresse@polymtl.ca
+  - name: Ulrich Baron-Fournier
+    email: ulrich.baron-fournier@polymtl.ca
     affiliation:
       - name: Polytechnique Montréal
 format:
@@ -32,7 +32,9 @@ Pkg.add("MatrixMarket")
 
 using LinearAlgebra
 using MatrixMarket
-using Krylov, SuiteSparseMatrixCollection
+using Krylov, SuiteSparseMatrixCollection, SparseArrays
+using SparseArrays
+using SuiteSparse.CHOLMOD 
 ```
 
 # Contexte
@@ -47,6 +49,48 @@ Implémenter le préconditionneur idéal basé sur le complément de Schur.
 Résoudre le système préconditionné avec MINRES et valider que le solveur s'arrête en (environ) 3 itération.
 
 ```{julia}
-# votre code ici
+ssmc = ssmc_db()
+pb = ssmc_matrices(ssmc, "", "illc1033")
+path = fetch_ssmc(pb, format="MM")
+path_mtx = path[1]
+A = MatrixMarket.mmread(joinpath(path_mtx, "illc1033.mtx"))
+m, n = size(A)
+b = ones(m)
+K = [I A ;
+     A' spzeros(n, n)]
+rhs = [b ; zeros(n)];
 ```
 
+```{julia}
+struct Precondition
+  m :: Int
+  n :: Int
+  LLt :: Factor{Float64}
+end
+
+function Precondition(A)
+    m, n = size(A)
+    LLt = cholesky(A' * A) 
+    return Precondition(m, n, LLt)
+end
+
+function LinearAlgebra.ldiv!(y, Pinv::Precondition, b)
+    m, n, LLt = Pinv.m, Pinv.n, Pinv.LLt
+    y[1:m] = b[1:m]
+    y[m+1:end] = LLt \ b[m+1:end] 
+    return y
+end
+```
+
+Résolution du problème sans préconditionneur:
+```{julia}
+res = Krylov.minres(K, rhs)
+```
+
+Résolution du problème avec préconditionneur:
+```{julia}
+Pinv = Precondition(A)
+res = Krylov.minres(K, rhs, M = Pinv, ldiv=true)
+```
+
+On peut voir que le nombre d'itération passe de 926 à 2 comme prévu après l'application du préconditionneur idéal!
